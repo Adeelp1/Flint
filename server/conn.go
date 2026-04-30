@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 )
@@ -9,44 +8,18 @@ import (
 func handleConn(conn net.Conn) {
 	defer conn.Close()
 
-	_, err := readRequest(conn)
+	req, err := parseRequest(conn)
 	if err != nil {
+		fmt.Println("Error parsing request:", err)
 		return
 	}
+
+	fmt.Printf("method: %s  path: %s  version: %s\n", req.Method, req.Path, req.Version)
 
 	err = writeResponse(conn)
 	if err != nil {
 		fmt.Println("Error writing response:", err)
 	}
-}
-
-func readRequest(conn net.Conn) (string, error) {
-	reader := bufio.NewReader(conn)
-
-	requestLine, err := reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("read error:", err)
-		return "", err
-	}
-
-	fmt.Printf("raw request line: %q\n", requestLine)
-
-	// We must read all headers before writing a response
-	// otherwise the client gets confused
-	// We stop when we see a blank line (\r\n)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("header read error:", err)
-			return "", err
-		}
-		// blank line means headers are done
-		if line == "\r\n" {
-			break
-		}
-	}
-
-	return requestLine, nil
 }
 
 func writeResponse(conn net.Conn) error {
