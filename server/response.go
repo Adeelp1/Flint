@@ -62,7 +62,8 @@ func (r *Response) write(conn net.Conn) error {
 	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", r.statusCode, statusText(r.statusCode))
 
 	// headers
-	r.headers["Content-Length"] = "text/plain"
+	r.headers["Content-Type"] = "text/plain"
+	r.headers["Content-Length"] = fmt.Sprintf("%d", len(r.body))
 	r.headers["Connection"] = "close"
 
 	var headerLines strings.Builder
