@@ -2,33 +2,37 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net"
 )
 
-func handleConn(conn net.Conn) {
+func handleConn(conn net.Conn, router *Router) {
 	defer conn.Close()
 
 	req, err := parseRequest(conn)
 	if err != nil {
+		// EOF means the client connected but sent nothing — completely normal
+		// browsers do this speculatively — just close silently
+		if err == io.EOF {
+			return
+		}
 		fmt.Println("Error parsing request:", err)
 		return
 	}
 
 	fmt.Printf("method: %s  path: %s  version: %s\n", req.Method, req.Path, req.Version)
 
-	err = writeResponse(conn)
-	if err != nil {
-		fmt.Println("Error writing response:", err)
-	}
+	// hand off to the router — it finds the handler and writes the response
+	router.dispatch(conn, req)
 }
 
-func writeResponse(conn net.Conn) error {
+func writeResponse(conn net.Conn, data []byte) error {
 	response := "HTTP/1.1 200 OK\r\n" +
 		"Content-Type: text/plain\r\n" +
-		"Content-Length: 13\r\n" +
+		"Content-Length: " + fmt.Sprintf("%d", len(data)) + "\r\n" +
 		"Connection: close\r\n" +
 		"\r\n" +
-		"Hello, Flint!"
+		string(data)
 
 	_, err := conn.Write([]byte(response))
 	if err != nil {

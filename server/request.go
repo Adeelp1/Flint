@@ -15,6 +15,7 @@ type Request struct {
 	Version string
 	Headers map[string]string
 	Body    []byte
+	Params  map[string]string
 }
 
 func parseRequestLine(line string) (method, path, version string, err error) {
@@ -75,7 +76,7 @@ func parseRequest(conn net.Conn) (*Request, error) {
 
 	requestLine, err := reader.ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("read error: %w", err)
+		return nil, err
 	}
 
 	method, path, version, err := parseRequestLine(requestLine)

@@ -12,13 +12,27 @@ type Config struct {
 type Server struct {
 	config   Config
 	listener net.Listener
+	router   *Router
 }
 
 func New(cfg Config) *Server {
 	// Initialize the server with the provided configuration
 	return &Server{
 		config: cfg,
+		router: NewRouter(),
 	}
+}
+
+func (s *Server) GET(path string, handler HandlerFunc) {
+	s.router.Add("GET", path, handler)
+}
+
+func (s *Server) POST(path string, handler HandlerFunc) {
+	s.router.Add("POST", path, handler)
+}
+
+func (s *Server) DELETE(path string, handler HandlerFunc) {
+	s.router.Add("DELETE", path, handler)
 }
 
 func (s *Server) Start() error {
@@ -39,6 +53,6 @@ func (s *Server) Start() error {
 			continue
 		}
 		// Handle the connection (e.g., in a separate goroutine)
-		go handleConn(conn)
+		go handleConn(conn, s.router)
 	}
 }
