@@ -6,7 +6,8 @@ import (
 )
 
 type Config struct {
-	Port string
+	Port       string
+	AuthTocken string
 }
 
 type Server struct {

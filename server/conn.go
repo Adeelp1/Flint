@@ -30,8 +30,7 @@ func handleConn(conn net.Conn, router *Router) {
 			fmt.Println("Error parsing request:", err)
 			return
 		}
-
-		fmt.Printf("method: %s  path: %s  version: %s\n", req.Method, req.Path, req.Version)
+		req.RemoteAddr = conn.RemoteAddr().String()
 
 		// hand off to the router — it finds the handler and writes the response
 		res := router.dispatch(req)

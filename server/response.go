@@ -21,6 +21,10 @@ func newResponse() *Response {
 	}
 }
 
+func (r *Response) StatusCode() int {
+	return r.statusCode
+}
+
 func (r *Response) Status(code int) *Response {
 	r.statusCode = code
 	return r

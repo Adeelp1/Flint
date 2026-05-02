@@ -9,12 +9,13 @@ import (
 )
 
 type Request struct {
-	Method  string
-	Path    string
-	Version string
-	Headers map[string]string
-	Body    []byte
-	Params  map[string]string
+	Method     string
+	Path       string
+	Version    string
+	Headers    map[string]string
+	Body       []byte
+	Params     map[string]string
+	RemoteAddr string
 }
 
 func parseRequestLine(line string) (method, path, version string, err error) {
