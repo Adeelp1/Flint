@@ -15,7 +15,9 @@ type Response struct {
 func newResponse() *Response {
 	return &Response{
 		statusCode: 200,
-		headers:    make(map[string]string),
+		headers: map[string]string{
+			"Content-Length": "0",
+		},
 	}
 }
 
@@ -63,8 +65,6 @@ func (r *Response) write(conn net.Conn) error {
 
 	// headers
 	r.headers["Content-Type"] = "text/plain"
-	r.headers["Content-Length"] = fmt.Sprintf("%d", len(r.body))
-	r.headers["Connection"] = "close"
 
 	var headerLines strings.Builder
 	for key, value := range r.headers {

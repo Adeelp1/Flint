@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"net"
 	"strings"
 )
 
@@ -77,7 +76,7 @@ func (r *Router) Add(method, path string, handler HandlerFunc) {
 
 // dispatch finds the right handler for a request and calls it
 // it also extracts path parameters e.g. /users/42 → params["id"] = "42"
-func (r *Router) dispatch(conn net.Conn, req *Request) {
+func (r *Router) dispatch(req *Request) *Response {
 	segments := splitPath(req.Path)
 	params := make(map[string]string)
 
@@ -87,17 +86,13 @@ func (r *Router) dispatch(conn net.Conn, req *Request) {
 
 	if node == nil {
 		// no node matched this path at all
-		res.Status(404).Body(fmt.Sprintf("404 Not Found: %s", req.Path))
-		res.write(conn)
-		return
+		return res.Status(404).Body(fmt.Sprintf("404 Not Found: %s", req.Path))
 	}
 
 	handler, ok := node.handlers[req.Method]
 	if !ok {
 		// path matched but no handler for this method
-		res.Status(405).Body(fmt.Sprintf("405 Method Not Allowed: %s %s", req.Method, req.Path))
-		res.write(conn)
-		return
+		return res.Status(405).Body(fmt.Sprintf("405 Method Not Allowed: %s %s", req.Method, req.Path))
 	}
 
 	// attach extracted params to the request so handlers can use them
@@ -106,8 +101,7 @@ func (r *Router) dispatch(conn net.Conn, req *Request) {
 	// call the matched handler
 	handler(req, res)
 
-	// write whatever the handler put in res to the connection
-	res.write(conn)
+	return res
 }
 
 // matchNode recursively walks the Trie to find a matching node

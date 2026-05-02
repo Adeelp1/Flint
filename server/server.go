@@ -41,18 +41,27 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to listen on %s: %w", s.config.Port, err)
 	}
 	s.listener = listener
-	defer s.listener.Close()
 
 	fmt.Printf("Flint listening on %s\n", s.config.Port)
 
-	// Start accepting connections
+	connChan := make(chan net.Conn, 1000)
+
+	numWorkers := 100
+	for i := 0; i < numWorkers; i++ {
+		go func(workerID int) {
+			for conn := range connChan {
+				handleConn(conn, s.router)
+			}
+		}(i)
+	}
+
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			fmt.Println("accept error:", err)
-			continue
+			close(connChan)
+			return fmt.Errorf("accept error: %w", err)
 		}
 		// Handle the connection (e.g., in a separate goroutine)
-		go handleConn(conn, s.router)
+		connChan <- conn
 	}
 }

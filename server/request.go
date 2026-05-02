@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"net"
 	"strconv"
 	"strings"
 )
@@ -46,7 +45,7 @@ func parseHeader(reader *bufio.Reader) (map[string]string, error) {
 		line = strings.TrimRight(line, "\r\n")
 		parts := strings.SplitN(line, ": ", 2)
 		if len(parts) != 2 {
-			fmt.Printf("invalid header line: %q", line)
+			fmt.Printf("invalid header line: %q\n", line)
 			continue
 		}
 
@@ -71,8 +70,7 @@ func parseBody(reader *bufio.Reader, contentLengthStr string) ([]byte, error) {
 	return body, nil
 }
 
-func parseRequest(conn net.Conn) (*Request, error) {
-	reader := bufio.NewReader(conn)
+func parseRequest(reader *bufio.Reader) (*Request, error) {
 
 	requestLine, err := reader.ReadString('\n')
 	if err != nil {
