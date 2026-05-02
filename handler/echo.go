@@ -2,6 +2,6 @@ package handler
 
 import "flint/server"
 
-func EchoHandler(req *server.Request) []byte {
-	return []byte("Echo: " + string(req.Body))
+func EchoHandler(req *server.Request, res *server.Response) {
+	res.Status(200).Body(string(req.Body))
 }

@@ -1,8 +1,8 @@
 package main
 
 import (
+	"flint/handler"
 	"flint/server"
-	"fmt"
 	"log"
 )
 
@@ -14,18 +14,11 @@ func main() {
 
 	s := server.New(cfg)
 
-	s.GET("/ping", server.Chain(func(req *server.Request, res *server.Response) {
-		res.Status(200).Body("pong")
-	}, server.Logger, server.RateLimit))
+	s.GET("/ping", server.Chain(handler.PingHandler, server.Logger, server.RateLimit))
 
-	s.GET("/users/:id", server.Chain(func(req *server.Request, res *server.Response) {
-		id := req.Params["id"]
-		res.Status(200).Body(fmt.Sprintf("user id is %s", id))
-	}, server.Logger, server.Auth(cfg.AuthTocken), server.RateLimit))
+	s.GET("/users/:id", server.Chain(handler.HomeHandler, server.Logger, server.Auth(cfg.AuthTocken), server.RateLimit))
 
-	s.POST("/echo", server.Chain(func(req *server.Request, res *server.Response) {
-		res.Status(200).Body(string(req.Body))
-	}, server.Logger, server.Auth(cfg.AuthTocken), server.RateLimit))
+	s.POST("/echo", server.Chain(handler.EchoHandler, server.Logger, server.Auth(cfg.AuthTocken), server.RateLimit))
 
 	if err := s.Start(); err != nil {
 		log.Fatal(err)
