@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+// Request holds the parsed fields of a single HTTP/1.1 request.
+// It is created by parseRequest and passed to every HandlerFunc and middleware.
+// Params is populated by the router when the path contains wildcard segments.
+// RemoteAddr is populated by handleConn from conn.RemoteAddr().
 type Request struct {
 	Method     string
 	Path       string

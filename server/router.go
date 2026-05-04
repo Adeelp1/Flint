@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// HandlerFunc is the signature every handler function must match
-// req  → the parsed HTTP request
-// res  → the response the handler writes to
+// HandlerFunc is the function signature that all route handlers and middleware
+// must match. req carries the parsed HTTP request. res is written to by the
+// handler and flushed to the client after the handler returns.
 type HandlerFunc func(req *Request, res *Response)
 
 // node is one segment in the Trie
@@ -36,23 +36,23 @@ func newNode(segment string) *node {
 	return n
 }
 
-// Router holds the root of the Trie and dispatches incoming requests
+// Router holds the root of the Trie and dispatches incoming requests to the
+// correct handler based on method and path. Create one with NewRouter().
 type Router struct {
 	root *node
 }
 
-// NewRouter creates a Router with an empty root node
+// NewRouter creates a Router with an empty root Trie node.
 func NewRouter() *Router {
 	return &Router{
 		root: newNode("/"),
 	}
 }
 
-// Add registers a route in the Trie
-// method  → "GET", "POST", "DELETE" etc
-// path    → "/users/:id"
-// handler → the function to call when this route matches
-func (r *Router) Add(method, path string, handler HandlerFunc) {
+// add registers a handler for the given HTTP method and path in the Trie.
+// Path segments prefixed with : are wildcard params e.g. "/users/:id".
+// Registering the same method+path twice overwrites the first handler.
+func (r *Router) add(method, path string, handler HandlerFunc) {
 	// split the path into segments
 	// "/users/:id" → ["users", ":id"]
 	segments := splitPath(path)

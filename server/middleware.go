@@ -7,16 +7,30 @@ import (
 	"time"
 )
 
+// MiddlewareFunc is a function that wraps a HandlerFunc with additional logic.
+// Middleware runs before and/or after the next handler in the chain.
+// Use Chain() to compose multiple middleware functions together.
 type MiddlewareFunc func(next HandlerFunc) HandlerFunc
 
-type TokenBucket struct {
+// Chain applies a list of middleware to a handler, returning a new HandlerFunc.
+// Middleware is applied left to right — the first in the list is outermost.
+// Example: Chain(h, Logger, Auth(token), RateLimit)
+// Request order: Logger → Auth → RateLimit → h
+func Chain(handler HandlerFunc, middlewares ...MiddlewareFunc) HandlerFunc {
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		handler = middlewares[i](handler)
+	}
+	return handler
+}
+
+type tokenBucket struct {
 	tokens         int
 	capacity       int
 	refillRate     int
 	lastRefillTime time.Time
 }
 
-var buckets = make(map[string]*TokenBucket)
+var buckets = make(map[string]*tokenBucket)
 var mu sync.Mutex
 
 func allowRequest(ip string) bool {
@@ -25,7 +39,7 @@ func allowRequest(ip string) bool {
 
 	bucket, exists := buckets[ip]
 	if !exists {
-		bucket = &TokenBucket{
+		bucket = &tokenBucket{
 			tokens:         10,
 			capacity:       10,
 			refillRate:     5,
@@ -50,7 +64,8 @@ func allowRequest(ip string) bool {
 	return false
 }
 
-// for every request that passes through it
+// Logger is a middleware that logs the HTTP method, path, status code,
+// and request duration to stdout after each request completes.
 func Logger(next HandlerFunc) HandlerFunc {
 
 	return func(req *Request, res *Response) {
@@ -58,11 +73,14 @@ func Logger(next HandlerFunc) HandlerFunc {
 
 		next(req, res)
 
-		fmt.Printf("%s %s %d %vms\n", req.Method, req.Path, res.StatusCode(), time.Since(start))
+		fmt.Printf("%s %s %d %v\n", req.Method, req.Path, res.StatusCode(), time.Since(start))
 	}
 }
 
-func Auth(tocken string) MiddlewareFunc {
+// Auth returns a middleware that validates the Authorization header against
+// the provided Bearer token. Returns 401 Unauthorized if the token is
+// missing or does not match. Token is configured via Config.AuthToken.
+func Auth(token string) MiddlewareFunc {
 	return func(next HandlerFunc) HandlerFunc {
 		return func(req *Request, res *Response) {
 			authHeader := req.Headers["Authorization"]
@@ -72,7 +90,7 @@ func Auth(tocken string) MiddlewareFunc {
 			}
 
 			provided := strings.TrimPrefix(authHeader, "Bearer ")
-			if provided != tocken {
+			if provided != token {
 				res.Status(401).Body("Unauthorized")
 				return
 			}
@@ -81,6 +99,10 @@ func Auth(tocken string) MiddlewareFunc {
 	}
 }
 
+// RateLimit is a middleware that enforces per-IP request limits using a
+// token bucket algorithm. Each IP gets 10 tokens refilling at 5 per second.
+// Returns 429 Too Many Requests when the bucket is empty.
+// The token bucket map is protected by a sync.Mutex for concurrent safety.
 func RateLimit(next HandlerFunc) HandlerFunc {
 	// This is a very naive implementation of rate limiting
 	// In production, you would want to use a more robust solution
@@ -98,11 +120,4 @@ func RateLimit(next HandlerFunc) HandlerFunc {
 		next(req, res)
 	}
 
-}
-
-func Chain(handler HandlerFunc, middlewares ...MiddlewareFunc) HandlerFunc {
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		handler = middlewares[i](handler)
-	}
-	return handler
 }
