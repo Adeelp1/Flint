@@ -45,7 +45,7 @@ Client
                     │  *Request
                     ▼
 ┌─────────────────────────────────────────────────┐
-│  Middleware Chain      (middleware.go)           │
+│  Middleware Chain      (middleware.go)          │
 │  Logger → Auth → RateLimit → Handler            │
 └───────────────────┬─────────────────────────────┘
                     │
