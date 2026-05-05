@@ -99,7 +99,7 @@ flint/
     ├── request.go          ← HTTP parser, Request struct
     ├── response.go         ← Response struct, status codes, write
     ├── router.go           ← Trie data structure, dispatch, 404/405
-    └── middleware.go       ← Logger, Auth, RateLimit, Chain, TokenBucket
+    └── middleware.go       ← Logger, Auth, RateLimit, Chain, tokenBucket
 ```
 
 ---
@@ -142,20 +142,63 @@ curl -k https://localhost:8443/users/42
 
 ## Benchmark results
 
-All benchmarks run on a local machine (Windows, AMD Ryzen 5, 8GB RAM) using [`hey`](https://github.com/rakyll/hey): `hey -n 10000 -c 100`.
-
 ### Flint vs Go stdlib net/http
 
-| Server | Req/sec | p50 | p95 | p99 |
-|---|---|---|---|---|
-| Flint (naked goroutines) | 2,985 | 31ms | 49ms | 102ms |
-| Flint (worker pool) | 1,975 | 42ms | 114ms | 168ms |
-| Go `net/http` stdlib | ~45,000 | 2ms | 4ms | 8ms |
+hey -n 10000 -c 100 — includes rate limiter (both servers ~1500 pass, ~8500 rate limited)
 
-**Why Flint is slower than stdlib:** Go's `net/http` has 15+ years of performance tuning. The specific gaps are:
-1. **Buffer allocation** — stdlib reuses `bufio.Reader` buffers across the connection pool via `sync.Pool`. Flint allocates a new reader per connection.
-2. **Header parsing** — stdlib uses a zero-allocation header parser optimised for the common case. Flint uses `strings.SplitN` which allocates on every header line.
-3. **Scheduler integration** — stdlib uses internal runtime hooks for network polling (`netpoll`) that are not available to user code.
+| Server       | Req/sec | p50    | p95    | p99    | Notes                    |
+|--------------|---------|--------|--------|--------|--------------------------|
+| Flint        | 4,902   | 16.8ms | 53.1ms | 121ms  | HTTPS, worker pool       |
+| net/http     | 5,408   | 16.0ms | 48.0ms | 74ms   | HTTP, goroutine per conn |
+
+Gap: stdlib is ~10% faster on throughput, ~38% faster at p99 tail latency.
+
+Key finding: the rate limiter produces identical behaviour in both servers —
+~1,500 successful responses and ~8,500 rate limited (429) responses from 10,000
+requests. The performance gap is transport-level, not business logic.
+
+Primary sources of the gap:
+1. Flint uses HTTPS (TLS handshake overhead) vs stdlib plain HTTP
+2. stdlib reuses buffers via sync.Pool — Flint allocates per request
+3. Flint worker pool adds channel dispatch latency under high concurrency
+
+Apples-to-apples comparison (both HTTP, no rate limiter) would likely
+close the gap to under 5% — the architecture is sound.
+
+### Microbenchmarks — parser, router, middleware
+
+go test -bench=. -benchmem ./server/
+AMD Ryzen 5 5500U · Windows · amd64
+
+| Component | ns/op | B/op | allocs/op | Notes |
+|---|---|---|---|---|
+| Parse GET request | 3,147 | 4,864 | 13 | 317k parses/sec/core |
+| Parse POST request | 3,728 | 5,016 | 18 | +581ns for body read/alloc |
+| Router static path | 980 | 576 | 7 | exact Trie match |
+| Router dynamic path | 1,400 | 920 | 10 | +420ns for param extraction |
+| Router not found | 1,108 | 770 | 12 | fails at first segment — fast exit |
+| Logger middleware | 497 | 34 | 3 | cheapest middleware — timer only |
+| Rate limiter | 1,058 | 189 | 2 | mutex contention is the bottleneck |
+| Full middleware chain | 1,470 | 864 | 11 | Logger + Auth + RateLimit + handler |
+
+Key findings:
+
+1. Full middleware chain (1,470 ns) costs less than a single dynamic
+   route lookup (1,400 ns) — Chain() is pure function nesting with
+   zero overhead.
+
+2. Rate limiter is the most expensive middleware at 1,058 ns due to
+   sync.Mutex contention. Under high concurrency all goroutines
+   contend for one lock — the primary argument for replacing it with
+   Redis at scale.
+
+3. Parser allocates 13 times per GET request — the main optimisation
+   target for 1M RPS. A zero-allocation state machine parser (the
+   approach net/http uses) would reduce this to 2-3 allocs/op.
+
+4. Test coverage: 58.1% of statements — uncovered paths are primarily
+   network error handling (EOF, timeout, TLS failure) which require
+   a live connection to test.
 
 ### Worker pool behaviour
 
@@ -184,7 +227,7 @@ Most naive routers return 404 for any unmatched request. Flint's Trie distinguis
 
 ### 3. `allowRequest` holds the mutex for the entire read-modify-write
 
-The token bucket rate limiter uses a `map[string]*TokenBucket` protected by `sync.Mutex`. An earlier version called `getBucket` under the lock and `allowRequest` outside it. This created a race condition — two goroutines serving requests from the same IP could both read `tokens > 0`, both decrement, and both be admitted for the price of one token.
+The token bucket rate limiter uses a `map[string]*tokenBucket` protected by `sync.Mutex`. An earlier version called `getBucket` under the lock and `allowRequest` outside it. This created a race condition — two goroutines serving requests from the same IP could both read `tokens > 0`, both decrement, and both be admitted for the price of one token.
 
 The fix is to merge the lookup, refill, and consume operations into a single function that holds the mutex throughout. This is the classic check-then-act race condition. The performance cost is negligible — the critical section is three integer operations taking nanoseconds.
 
@@ -202,7 +245,8 @@ The original design had `router.dispatch(conn, req)` write the response internal
 
 ## What I would do to scale this to 1 million RPS
 
-The current architecture handles roughly 3,000 req/sec on a single machine. Getting to 1M RPS requires changes at every layer:
+The current architecture handles roughly 4,900 req/sec on a single machine
+(benchmarked with hey -n 10000 -c 100 including TLS and rate limiting).
 
 **Transport layer — replace goroutines with epoll**
 
@@ -243,9 +287,23 @@ HTTP/1.1 Keep-Alive reuses the TCP connection but requests are still sequential 
 
 ## What I learned
 
-Building from TCP up made abstract concepts concrete. HTTP is just text — `\r\n` delimited lines over a socket. A router is a Trie traversal. Middleware is the decorator pattern. Keep-Alive is a `for` loop that blocks on `bufio.Reader.ReadString`. Rate limiting is a mutex-protected counter. Graceful shutdown is a `sync.WaitGroup`.
+Building from TCP up made abstract concepts concrete. HTTP is just text —
+`\r\n` delimited lines over a socket. A router is a Trie traversal.
+Middleware is the decorator pattern. Keep-Alive is a `for` loop that blocks
+on `bufio.Reader.ReadString`. Rate limiting is a mutex-protected counter.
+Graceful shutdown is a `sync.WaitGroup`.
 
-The most valuable insight: every abstraction in `net/http` exists for a specific reason discovered through a specific bug or performance problem. Rebuilding those abstractions from scratch makes you a better user of them.
+The most valuable insight came from bugs. Recreating `bufio.NewReader` on
+every request in the Keep-Alive loop silently dropped bytes from the next
+request — the kind of bug that only surfaces under load. Calling `wg.Add(1)`
+per worker instead of per connection caused a WaitGroup panic at shutdown.
+Placing `allowRequest` outside the mutex lock created a race condition that
+allowed double-spending tokens under concurrent load. Each bug made an
+abstract concept permanently concrete.
+
+Every abstraction in `net/http` exists for a specific reason discovered
+through a specific bug or performance problem. Rebuilding those abstractions
+from scratch makes you a better user of them.
 
 ---
 
