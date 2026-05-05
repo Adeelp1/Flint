@@ -17,11 +17,11 @@ func main() {
 
 	s := server.New(cfg)
 
-	s.GET("/ping", server.Chain(handler.PingHandler, server.Logger, server.RateLimit))
+	s.GET("/ping", server.Chain(handler.PingHandler, server.Logger(os.Stdout), server.RateLimit))
 
-	s.GET("/users/:id", server.Chain(handler.HomeHandler, server.Logger, server.Auth(cfg.AuthToken), server.RateLimit))
+	s.GET("/users/:id", server.Chain(handler.HomeHandler, server.Logger(os.Stdout), server.Auth(cfg.AuthToken), server.RateLimit))
 
-	s.POST("/echo", server.Chain(handler.EchoHandler, server.Logger, server.Auth(cfg.AuthToken), server.RateLimit))
+	s.POST("/echo", server.Chain(handler.EchoHandler, server.Logger(os.Stdout), server.Auth(cfg.AuthToken), server.RateLimit))
 
 	go func() {
 		if err := s.Start(); err != nil {

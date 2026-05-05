@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,9 @@ type tokenBucket struct {
 	lastRefillTime time.Time
 }
 
+// buckets stores one tokenBucket per unique IP address.
+// entries are never evicted — memory grows with unique IP count.
+// for production use, replace with a Redis-backed store with TTL expiry.
 var buckets = make(map[string]*tokenBucket)
 var mu sync.Mutex
 
@@ -64,16 +68,19 @@ func allowRequest(ip string) bool {
 	return false
 }
 
-// Logger is a middleware that logs the HTTP method, path, status code,
-// and request duration to stdout after each request completes.
-func Logger(next HandlerFunc) HandlerFunc {
+// Logger returns a middleware that writes method, path, status code,
+// and request duration to out after each request completes.
+// Pass os.Stdout for development, io.Discard for benchmarks,
+// or any io.Writer for custom log destinations.
+func Logger(out io.Writer) MiddlewareFunc {
+	return func(next HandlerFunc) HandlerFunc {
+		return func(req *Request, res *Response) {
+			start := time.Now()
 
-	return func(req *Request, res *Response) {
-		start := time.Now()
+			next(req, res)
 
-		next(req, res)
-
-		fmt.Printf("%s %s %d %v\n", req.Method, req.Path, res.StatusCode(), time.Since(start))
+			fmt.Fprintf(out, "%s %s %d %v\n", req.Method, req.Path, res.StatusCode(), time.Since(start))
+		}
 	}
 }
 
@@ -104,8 +111,6 @@ func Auth(token string) MiddlewareFunc {
 // Returns 429 Too Many Requests when the bucket is empty.
 // The token bucket map is protected by a sync.Mutex for concurrent safety.
 func RateLimit(next HandlerFunc) HandlerFunc {
-	// This is a very naive implementation of rate limiting
-	// In production, you would want to use a more robust solution
 	return func(req *Request, res *Response) {
 		ip := req.RemoteAddr
 		if ip == "" {

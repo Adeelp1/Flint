@@ -2,6 +2,8 @@ package server
 
 import (
 	"bufio"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 )
@@ -125,7 +127,7 @@ func BenchmarkRouterNotFound(b *testing.B) {
 // BenchmarkLoggerMiddleware measures the overhead Logger adds per request
 // The difference between this and the raw handler is the Logger's cost
 func BenchmarkLoggerMiddleware(b *testing.B) {
-	handler := Logger(func(req *Request, res *Response) {
+	handler := Logger(io.Discard)(func(req *Request, res *Response) {
 		res.Status(200).Body("pong")
 	})
 
@@ -154,7 +156,7 @@ func BenchmarkRateLimiter(b *testing.B) {
 		req := &Request{
 			Method:     "GET",
 			Path:       "/ping",
-			RemoteAddr: "192.168.1.1:1234",
+			RemoteAddr: fmt.Sprintf("192.168.%d.%d:1234", i/255, i%255),
 		}
 		res := newResponse()
 		handler(req, res)
@@ -168,7 +170,7 @@ func BenchmarkFullMiddlewareChain(b *testing.B) {
 		func(req *Request, res *Response) {
 			res.Status(200).Body("pong")
 		},
-		Logger,
+		Logger(io.Discard),
 		Auth("123456789abcdef"),
 		RateLimit,
 	)
